@@ -1549,6 +1549,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_file"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04989cc1638c8c1c9e7347180a90bc58a5ae9c2236668a6bd927df0e185ff47b"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "emath"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3333,6 +3342,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_egui",
+ "egui_file",
  "ron",
  "serde",
  "thiserror",

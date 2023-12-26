@@ -13,6 +13,7 @@ opt-level = 3
 [dependencies]
 bevy = "0.12.1"
 bevy_egui = "0.24.0"
+egui_file = "0.13.0"
 ron = "0.8.1"
 serde = { version = "1.0.193", features = ["derive"] }
 thiserror = "1.0.51"
