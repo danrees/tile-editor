@@ -3343,6 +3343,8 @@ dependencies = [
  "bevy",
  "bevy_egui",
  "egui_file",
+ "futures-lite 2.1.0",
+ "nom",
  "ron",
  "serde",
  "thiserror",

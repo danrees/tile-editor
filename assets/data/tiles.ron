@@ -1,0 +1,13 @@
+TileDefinition(
+    tiles: [
+    Tile(
+        name: "grass",
+        path: "tiles/grass_v3.png",
+        atlas_definition: Some(AtlasDefinition(
+            tile_size: Vec2(16.0, 16.0),
+            columns: 2,
+            rows: 1,
+        )),
+    ),
+]
+)
