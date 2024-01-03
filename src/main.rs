@@ -1,8 +1,8 @@
+use std::collections::HashMap;
+
 use assets::{AssetPlugin, Tile, TileDefinition};
-use bevy::asset::LoadedFolder;
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use egui_file::FileDialog;
 
 mod assets;
 // mod loader;
@@ -16,9 +16,13 @@ fn main() {
         .init_resource::<MapSettings>()
         .init_resource::<TileAtlases>()
         // .register_asset_source("", )
-        .add_systems(Startup, (setup, tile_load))
+        .add_systems(Startup, setup)
         .add_systems(Update, draw_grid)
-        .add_systems(Update, (example_ui).run_if(resource_exists::<TilesData>()))
+        .add_systems(
+            Update,
+            (example_ui, selected_tile).run_if(resource_exists::<TilesData>()),
+        )
+        .add_systems(Update, load_tiles.run_if(resource_changed::<TilesData>()))
         // .add_systems(Startup, load_tiles.run_if(resource_exists::<TilesData>()))
         .run();
 }
@@ -34,6 +38,7 @@ struct MapSettings {
     grid_width: u32,
     grid_height: u32,
     selected_tile: Option<(Tile, usize)>,
+    atlases: HashMap<String, Handle<TextureAtlas>>,
     // tile_folder: Option<String>,
     // tiles_list: Vec<Tile>,
 }
@@ -45,6 +50,7 @@ impl Default for MapSettings {
             grid_width: 6,
             grid_height: 4,
             selected_tile: None,
+            atlases: HashMap::new(),
             // tile_folder: None,
             // tiles_list: Vec::new(),
         }
@@ -66,34 +72,33 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.insert_resource(TilesData(tiles_data));
 }
 
-// fn load_tiles(
-//     tile_handle: Res<TilesData>,
-//     tile_assets: Res<Assets<TileDefinition>>,
-//     asset_server: Res<AssetServer>,
-//     mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-//     // mut atlases: ResMut<TileAtlases>,
-// ) {
-//     if let Some(tiles) = tile_assets.get(&tile_handle.0) {
-//         for tile in &tiles.tiles {
-//             if let Some(atlas) = &tile.atlas_defintion {
-//                 let texture_handle = asset_server.load(&tile.path);
-//                 let tx_atlas = TextureAtlas::from_grid(
-//                     texture_handle,
-//                     atlas.tile_size,
-//                     atlas.columns,
-//                     atlas.rows,
-//                     atlas.padding,
-//                     atlas.offsest,
-//                 );
-//                 let atlas_handle = texture_atlases.add(tx_atlas);
-//                 // TODO: what do I do with the atlas handle?
-//                 if let Some(td) = tile_assets.get(tile_handle.0) {
-//                     atlases.0.push((tile.name.clone(), atlas_handle));
-//                 }
-//             }
-//         }
-//     }
-// }
+fn load_tiles(
+    tile_handle: Res<TilesData>,
+    tile_assets: Res<Assets<TileDefinition>>,
+    asset_server: Res<AssetServer>,
+    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
+    mut state: ResMut<MapSettings>,
+    // mut atlases: ResMut<TileAtlases>,
+) {
+    if let Some(tiles) = tile_assets.get(&tile_handle.0) {
+        for tile in &tiles.tiles {
+            if let Some(atlas) = &tile.atlas_definition {
+                let texture_handle = asset_server.load(&tile.path);
+                let tx_atlas = TextureAtlas::from_grid(
+                    texture_handle,
+                    atlas.tile_size,
+                    atlas.columns,
+                    atlas.rows,
+                    atlas.padding,
+                    atlas.offsest,
+                );
+                let atlas_handle = texture_atlases.add(tx_atlas);
+                // texture_atlases.add(tx_atlas);
+                state.atlases.insert(tile.path.clone(), atlas_handle);
+            }
+        }
+    }
+}
 
 fn draw_grid(mut gizmos: Gizmos, settings: Res<MapSettings>) {
     let grid_width = settings.tile_size * settings.grid_width as f32;
@@ -124,23 +129,11 @@ fn draw_grid(mut gizmos: Gizmos, settings: Res<MapSettings>) {
     }
 }
 
-struct DialogState {
-    dialog: Option<FileDialog>,
-}
-
-impl Default for DialogState {
-    fn default() -> Self {
-        Self { dialog: None }
-    }
-}
-
 fn example_ui(
     //mut commands: Commands,
     mut contexts: EguiContexts,
     mut state: ResMut<MapSettings>,
     // asset_server: Res<AssetServer>,
-    mut dialog_res: Local<DialogState>,
-    mut folder_event: EventWriter<FolderEvent>,
     // tile_atlases: Res<TileAtlases>,
     // atlases: Res<Assets<TextureAtlas>>,
     tile_handle: Res<TilesData>,
@@ -199,8 +192,46 @@ fn example_ui(
     });
 }
 
-fn tile_load(asset_server: Res<AssetServer>, mut map_settings: ResMut<MapSettings>) {
-    let tiles_folder = asset_server.load_folder("tiles");
+fn selected_tile(mut commands: Commands, state: Res<MapSettings>) {
+    if let Some((tile, index)) = &state.selected_tile {
+        if let Some(atlas) = state.atlases.get(&tile.path) {
+            display_selected_tile(&mut commands, atlas.clone(), *index);
+        }
+    }
+}
+
+fn display_selected_tile(
+    commands: &mut Commands,
+    texture_atlas: Handle<TextureAtlas>,
+    atlas_index: usize,
+) {
+    commands
+        .spawn(NodeBundle {
+            style: Style {
+                height: Val::Percent(100.0),
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Column,
+                justify_content: JustifyContent::End,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|parent| {
+            parent.spawn(AtlasImageBundle {
+                style: Style {
+                    width: Val::Px(64.),
+                    height: Val::Px(64.),
+                    ..default()
+                },
+                texture_atlas,
+                texture_atlas_image: UiTextureAtlasImage {
+                    index: atlas_index,
+                    ..default()
+                },
+                ..default()
+            });
+        });
 }
 
 // fn tile_list(
