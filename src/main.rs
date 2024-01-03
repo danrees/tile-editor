@@ -3,8 +3,10 @@ use std::collections::HashMap;
 use assets::{AssetPlugin, Tile, TileDefinition};
 use bevy::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use paint::PaintPlugin;
 
 mod assets;
+mod paint;
 // mod loader;
 
 fn main() {
@@ -12,12 +14,13 @@ fn main() {
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(EguiPlugin)
         .add_plugins(AssetPlugin)
+        .add_plugins(PaintPlugin)
         .add_event::<FolderEvent>()
         .init_resource::<MapSettings>()
         .init_resource::<TileAtlases>()
         // .register_asset_source("", )
         .add_systems(Startup, setup)
-        .add_systems(Update, draw_grid)
+        // .add_systems(Update, draw_grid)
         .add_systems(
             Update,
             (example_ui, selected_tile).run_if(resource_exists::<TilesData>()),
@@ -66,8 +69,11 @@ struct TilesData(Handle<TileDefinition>);
 #[derive(Resource, Default)]
 struct TileAtlases(Vec<(String, Handle<TextureAtlas>)>);
 
+#[derive(Component)]
+pub struct MainCamera;
+
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn((Camera2dBundle::default(), MainCamera));
     let tiles_data = asset_server.load("data/tiles.ron");
     commands.insert_resource(TilesData(tiles_data));
 }
@@ -213,6 +219,7 @@ fn display_selected_tile(
                 flex_direction: FlexDirection::Column,
                 justify_content: JustifyContent::End,
                 align_items: AlignItems::Center,
+                padding: UiRect::all(Val::Px(10.)),
                 ..default()
             },
             ..default()
