@@ -9,21 +9,31 @@ mod assets;
 mod paint;
 // mod loader;
 
+#[derive(States, Default, Debug, Clone, Hash, PartialEq, Eq)]
+pub enum AppState {
+    #[default]
+    ConfiguringMap,
+    Painting,
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .add_plugins(EguiPlugin)
         .add_plugins(AssetPlugin)
         .add_plugins(PaintPlugin)
+        .add_state::<AppState>()
         .add_event::<FolderEvent>()
+        .add_event::<ResizeEvent>()
         .init_resource::<MapSettings>()
         .init_resource::<TileAtlases>()
         // .register_asset_source("", )
         .add_systems(Startup, setup)
         // .add_systems(Update, draw_grid)
+        // .add_systems(OnEnter(AppState::ConfiguringMap), configure_grid)
         .add_systems(
             Update,
-            (example_ui, selected_tile).run_if(resource_exists::<TilesData>()),
+            (selected_tile, example_ui).run_if(resource_exists::<TilesData>()),
         )
         .add_systems(Update, load_tiles.run_if(resource_changed::<TilesData>()))
         // .add_systems(Startup, load_tiles.run_if(resource_exists::<TilesData>()))
@@ -35,7 +45,7 @@ fn main() {
 //     path: String,
 // }
 
-#[derive(Resource)]
+#[derive(Resource, Clone)]
 struct MapSettings {
     tile_size: f32,
     grid_width: u32,
@@ -62,6 +72,23 @@ impl Default for MapSettings {
 
 #[derive(Event)]
 struct FolderEvent(String);
+
+#[derive(Event)]
+pub struct ResizeEvent {
+    tile_size: f32,
+    grid_width: u32,
+    grid_height: u32,
+}
+
+impl From<GridSettings> for ResizeEvent {
+    fn from(value: GridSettings) -> Self {
+        Self {
+            tile_size: value.tile_size,
+            grid_width: value.grid_width,
+            grid_height: value.grid_height,
+        }
+    }
+}
 
 #[derive(Resource, Default)]
 struct TilesData(Handle<TileDefinition>);
@@ -135,6 +162,23 @@ fn draw_grid(mut gizmos: Gizmos, settings: Res<MapSettings>) {
     }
 }
 
+#[derive(Debug, Clone)]
+struct GridSettings {
+    tile_size: f32,
+    grid_width: u32,
+    grid_height: u32,
+}
+
+impl Default for GridSettings {
+    fn default() -> Self {
+        Self {
+            tile_size: 64.,
+            grid_width: 6,
+            grid_height: 4,
+        }
+    }
+}
+
 fn example_ui(
     //mut commands: Commands,
     mut contexts: EguiContexts,
@@ -144,12 +188,14 @@ fn example_ui(
     // atlases: Res<Assets<TextureAtlas>>,
     tile_handle: Res<TilesData>,
     tile_assets: Res<Assets<TileDefinition>>,
+    mut settings: Local<GridSettings>,
+    mut resize_events: EventWriter<ResizeEvent>,
 ) {
     let ui_window = egui::Window::new("main");
     ui_window.show(contexts.ctx_mut(), |ui| {
-        ui.add(egui::Slider::new(&mut state.tile_size, 0.0..=100.0).text("Tile Size"));
-        ui.add(egui::Slider::new(&mut state.grid_width, 0..=50).text("Grid Width"));
-        ui.add(egui::Slider::new(&mut state.grid_height, 0..=50).text("Grid Height"));
+        ui.add(egui::Slider::new(&mut settings.tile_size, 0.0..=100.0).text("Tile Size"));
+        ui.add(egui::Slider::new(&mut settings.grid_width, 0..=50).text("Grid Width"));
+        ui.add(egui::Slider::new(&mut settings.grid_height, 0..=50).text("Grid Height"));
 
         // ui.label(state.tile_folder.clone().unwrap_or(String::from("None")));
 
@@ -179,6 +225,12 @@ fn example_ui(
                     });
                 }
             }
+            if vui.button("Apply").clicked() {
+                // state.tile_size = settings.tile_size;
+                // state.grid_width = settings.grid_width;
+                // state.grid_height = settings.grid_height;
+                resize_events.send(ResizeEvent::from((*settings).clone()));
+            }
         });
         // if (ui.button("Folder")).clicked() {
         //     let cwd = std::env::current_dir().unwrap();
@@ -196,6 +248,96 @@ fn example_ui(
         //     }
         // }
     });
+}
+
+#[derive(Component)]
+struct ConfigMenu;
+
+fn configure_grid(mut commands: Commands, settings: Res<MapSettings>) {
+    commands
+        .spawn((
+            NodeBundle {
+                style: Style {
+                    width: Val::Percent(100.),
+                    height: Val::Percent(100.),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    // justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                ..default()
+            },
+            ConfigMenu,
+        ))
+        .with_children(|parent| {
+            parent.spawn(TextBundle::from_section(
+                "Grid Setup",
+                TextStyle {
+                    font_size: 40.,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ));
+        })
+        .with_children(|parent| {
+            spawn_widget(parent, "Grid Width");
+        });
+}
+
+fn spawn_widget(builder: &mut ChildBuilder, text: &str) {
+    builder
+        .spawn(NodeBundle {
+            style: Style {
+                flex_direction: FlexDirection::Row,
+                ..default()
+            },
+            ..default()
+        })
+        .with_children(|builder| {
+            builder.spawn(TextBundle::from_section(
+                text,
+                TextStyle {
+                    font_size: 30.,
+                    color: Color::WHITE,
+                    ..default()
+                },
+            ));
+        })
+        .with_children(|builder| {
+            spawn_button_with_text(builder, "+");
+            spawn_button_with_text(builder, "-");
+        });
+}
+
+fn spawn_button_with_text(builder: &mut ChildBuilder, label: &str) {
+    builder
+        .spawn(NodeBundle {
+            style: Style { ..default() },
+            ..default()
+        })
+        .with_children(|builder| {
+            builder
+                .spawn(ButtonBundle {
+                    style: Style {
+                        width: Val::Px(40.),
+                        height: Val::Px(40.),
+                        border: UiRect::all(Val::Px(5.)),
+                        ..default()
+                    },
+                    border_color: BorderColor(Color::WHITE),
+                    ..default()
+                })
+                .with_children(|builder| {
+                    builder.spawn(TextBundle::from_section(
+                        label,
+                        TextStyle {
+                            font_size: 20.,
+                            color: Color::RED,
+                            ..default()
+                        },
+                    ));
+                });
+        });
 }
 
 fn selected_tile(mut commands: Commands, state: Res<MapSettings>) {

@@ -1,13 +1,13 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle, window::PrimaryWindow};
 
-use crate::{MainCamera, MapSettings};
+use crate::{MainCamera, MapSettings, ResizeEvent};
 
 pub struct PaintPlugin;
 
 impl Plugin for PaintPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LeftClickEvent>()
-            .add_systems(Startup, setup_grid_cells)
+            .add_systems(Update, setup_grid_cells)
             .add_systems(Update, translate_coords)
             .add_systems(
                 Update,
@@ -23,6 +23,9 @@ struct Tile {
     position: Rect,
     entity: Entity,
 }
+
+#[derive(Component)]
+struct Grid;
 
 #[derive(Component)]
 struct Cell;
@@ -57,6 +60,7 @@ fn select_grid_cell(
     mut grid_cells: ResMut<GridCells>,
     settings: Res<MapSettings>,
     cell_q: Query<&Transform, With<Cell>>,
+    grid_q: Query<Entity, With<Grid>>,
 ) {
     for click in reader.read() {
         for (i, cell) in grid_cells.0.iter_mut().enumerate() {
@@ -66,22 +70,25 @@ fn select_grid_cell(
                     if let Some(e) = commands.get_entity(cell.entity) {
                         e.despawn_recursive();
                     }
+                    let e = grid_q.single();
                     if let Some(atlas) = settings.atlases.get(&tile.path) {
                         let transform = cell_q.get(cell.entity).unwrap();
-                        let new_entity = commands.spawn((
-                            SpriteSheetBundle {
-                                sprite: TextureAtlasSprite {
-                                    index: *index,
-                                    custom_size: Some(Vec2::splat(settings.tile_size)),
+                        commands.get_entity(e).unwrap().with_children(|parent| {
+                            let new_entity = parent.spawn((
+                                SpriteSheetBundle {
+                                    sprite: TextureAtlasSprite {
+                                        index: *index,
+                                        custom_size: Some(Vec2::splat(settings.tile_size)),
+                                        ..default()
+                                    },
+                                    texture_atlas: atlas.clone(),
+                                    transform: transform.clone(),
                                     ..default()
                                 },
-                                texture_atlas: atlas.clone(),
-                                transform: transform.clone(),
-                                ..default()
-                            },
-                            Cell,
-                        ));
-                        cell.entity = new_entity.id();
+                                Cell,
+                            ));
+                            cell.entity = new_entity.id();
+                        });
                     }
                 }
             }
@@ -91,50 +98,60 @@ fn select_grid_cell(
 
 fn setup_grid_cells(
     mut commands: Commands,
-    settings: Res<MapSettings>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut resize_events: EventReader<ResizeEvent>,
+    query: Query<Entity, With<Grid>>,
 ) {
-    let grid_width = settings.tile_size * settings.grid_width as f32;
-    let grid_height = settings.tile_size * settings.grid_height as f32;
+    for event in resize_events.read() {
+        let grid_width = event.tile_size * event.grid_width as f32;
+        let grid_height = event.tile_size * event.grid_height as f32;
 
-    let x_start = 1.0 * (grid_width / 2.0);
-    let y_start = 1.0 * (grid_height / 2.0);
+        let x_start = 1.0 * (grid_width / 2.0);
+        let y_start = 1.0 * (grid_height / 2.0);
 
-    let mut cells = Vec::new();
-    for y in (0..settings.grid_height).rev() {
-        for x in 0..settings.grid_width {
-            let cell_start_x = x as f32 * settings.tile_size - x_start;
-            let cell_start_y = y as f32 * settings.tile_size - y_start;
-            let cell_start = Vec2::new(cell_start_x, cell_start_y);
-            let cell_end = Vec2::new(
-                cell_start_x + settings.tile_size,
-                cell_start_y + settings.tile_size,
-            );
-            let place_holder = commands.spawn((
-                MaterialMesh2dBundle {
-                    mesh: meshes
-                        .add(Mesh::from(shape::Quad::new(Vec2::splat(
-                            settings.tile_size - 1.0,
-                        ))))
-                        .into(),
-                    transform: Transform::from_xyz(
-                        cell_start_x + (settings.tile_size / 2.),
-                        cell_start_y + (settings.tile_size / 2.),
-                        0.,
-                    ),
-                    material: materials.add(ColorMaterial::from(Color::PURPLE)),
-                    ..default()
-                },
-                Cell,
-            ));
-
-            let tile = Tile {
-                position: Rect::from_corners(cell_start, cell_end),
-                entity: place_holder.id(),
-            };
-            cells.push(tile);
+        let mut cells = Vec::new();
+        if let Ok(grid) = query.get_single() {
+            commands.entity(grid).despawn_recursive();
         }
+        commands
+            .spawn((Grid, SpatialBundle { ..default() }))
+            .with_children(|commands| {
+                for y in (0..event.grid_height).rev() {
+                    for x in 0..event.grid_width {
+                        let cell_start_x = x as f32 * event.tile_size - x_start;
+                        let cell_start_y = y as f32 * event.tile_size - y_start;
+                        let cell_start = Vec2::new(cell_start_x, cell_start_y);
+                        let cell_end = Vec2::new(
+                            cell_start_x + event.tile_size,
+                            cell_start_y + event.tile_size,
+                        );
+                        let place_holder = commands.spawn((
+                            MaterialMesh2dBundle {
+                                mesh: meshes
+                                    .add(Mesh::from(shape::Quad::new(Vec2::splat(
+                                        event.tile_size - 1.0,
+                                    ))))
+                                    .into(),
+                                transform: Transform::from_xyz(
+                                    cell_start_x + (event.tile_size / 2.),
+                                    cell_start_y + (event.tile_size / 2.),
+                                    0.,
+                                ),
+                                material: materials.add(ColorMaterial::from(Color::PURPLE)),
+                                ..default()
+                            },
+                            Cell,
+                        ));
+
+                        let tile = Tile {
+                            position: Rect::from_corners(cell_start, cell_end),
+                            entity: place_holder.id(),
+                        };
+                        cells.push(tile);
+                    }
+                }
+            });
+        commands.insert_resource(GridCells(cells));
     }
-    commands.insert_resource(GridCells(cells));
 }
