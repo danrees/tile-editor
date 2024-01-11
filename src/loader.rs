@@ -13,5 +13,4 @@ fn setup(
     tile_data: Res<TilesData>,
     tile_data_asset: Res<Assets<TileDefinition>>,
 ) {
-    if let Some(a) = tile_data_asset.get(tile_data.0) {}
 }

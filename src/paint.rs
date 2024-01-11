@@ -1,17 +1,21 @@
 use bevy::{prelude::*, sprite::MaterialMesh2dBundle, window::PrimaryWindow};
+use bevy_egui::{egui, EguiContexts};
 
-use crate::{MainCamera, MapSettings, ResizeEvent};
+use crate::{menus::ResizeEvent, MainCamera, MapSettings};
 
 pub struct PaintPlugin;
 
 impl Plugin for PaintPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<LeftClickEvent>()
+            .add_event::<RightClickEvent>()
+            .init_resource::<GridState>()
+            .add_systems(Startup, setup_features_menu)
             .add_systems(Update, setup_grid_cells)
             .add_systems(Update, translate_coords)
             .add_systems(
                 Update,
-                select_grid_cell.run_if(resource_exists::<GridCells>()),
+                (select_grid_cell, open_features_ui).run_if(resource_exists::<GridCells>()),
             );
     }
 }
@@ -19,9 +23,17 @@ impl Plugin for PaintPlugin {
 #[derive(Event)]
 struct LeftClickEvent(Vec2);
 
+#[derive(Event)]
+struct RightClickEvent(Vec2);
+
 struct Tile {
     position: Rect,
     entity: Entity,
+}
+
+#[derive(Component)]
+struct TileFeatures {
+    collisions: bool,
 }
 
 #[derive(Component)]
@@ -30,17 +42,26 @@ struct Grid;
 #[derive(Component)]
 struct Cell;
 
+#[derive(Component)]
+struct SelectedCell;
+
 #[derive(Resource)]
 struct GridCells(Vec<Tile>);
+
+impl GridCells {
+    fn find_cell(&self, pos: Vec2) -> Option<&Tile> {
+        self.0.iter().find(|cell| cell.position.contains(pos))
+    }
+}
 
 fn translate_coords(
     mb_input: Res<Input<MouseButton>>,
     window: Query<&Window, With<PrimaryWindow>>,
     camera: Query<(&Camera, &GlobalTransform), With<MainCamera>>,
     mut writer: EventWriter<LeftClickEvent>,
+    mut r_writer: EventWriter<RightClickEvent>,
 ) {
-    if mb_input.just_pressed(MouseButton::Left) {
-        info!("clicked");
+    for btn in mb_input.get_just_pressed() {
         let (cam, coords) = camera.single();
         let win = window.single();
 
@@ -49,7 +70,47 @@ fn translate_coords(
             .and_then(|cursor| cam.viewport_to_world(coords, cursor))
             .map(|ray| ray.origin.truncate())
         {
-            writer.send(LeftClickEvent(world_position));
+            match btn {
+                MouseButton::Left => {
+                    info!("left clicked");
+                    writer.send(LeftClickEvent(world_position));
+                }
+                MouseButton::Right => {
+                    info!("right clicked");
+                    r_writer.send(RightClickEvent(world_position));
+                }
+                _ => info!("unsupported btn"),
+            }
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+struct GridState {
+    selected_cell: Option<Tile>,
+    open: bool,
+}
+
+fn setup_features_menu(mut feature_state: ResMut<GridState>, mut contexts: EguiContexts) {
+    let window = egui::Window::new("features").open(&mut feature_state.open);
+
+    window.show(contexts.ctx_mut(), |ui| {
+        ui.label("Features");
+    });
+}
+
+fn open_features_ui(
+    // mut econtexts: EguiContexts,
+    mut grid_cells: ResMut<GridCells>,
+    mut reader: EventReader<RightClickEvent>,
+    mut feature_state: ResMut<GridState>,
+    cell_q: Query<Option<&TileFeatures>, With<Cell>>,
+) {
+    for click in reader.read() {
+        if let Some(cell) = grid_cells.find_cell(click.0) {
+            if let Ok(e) = cell_q.get(cell.entity) {
+                feature_state.open = true;
+            }
         }
     }
 }
@@ -61,11 +122,12 @@ fn select_grid_cell(
     settings: Res<MapSettings>,
     cell_q: Query<&Transform, With<Cell>>,
     grid_q: Query<Entity, With<Grid>>,
+    selected_q: Query<Entity, With<SelectedCell>>,
 ) {
     for click in reader.read() {
         for (i, cell) in grid_cells.0.iter_mut().enumerate() {
             if cell.position.contains(click.0) {
-                if let Some((tile, index)) = &settings.selected_tile {
+                if let Some((tile, index)) = &settings.paint_tile {
                     info!("clicked index {} at coords {}", i, click.0);
                     if let Some(e) = commands.get_entity(cell.entity) {
                         e.despawn_recursive();
@@ -87,6 +149,7 @@ fn select_grid_cell(
                                 },
                                 Cell,
                             ));
+
                             cell.entity = new_entity.id();
                         });
                     }
